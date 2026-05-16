@@ -59,7 +59,7 @@ function bech32Decode(addr: string): { words: number[]; version: number } {
 const BASE58_ALPHABET =
   "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
-function base58Decode(str: string): Uint8Array {
+export function base58Decode(str: string): Uint8Array {
   let num = BigInt(0);
   for (const c of str) {
     const idx = BASE58_ALPHABET.indexOf(c);

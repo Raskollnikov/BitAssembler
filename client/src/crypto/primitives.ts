@@ -1,7 +1,24 @@
 import * as secp from "@noble/secp256k1";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { ripemd160 } from "@noble/hashes/legacy.js";
+import { hmac } from "@noble/hashes/hmac.js";
 
+secp.hashes.sha256 = sha256;
+secp.hashes.sha256Async = async (msg: Uint8Array) => sha256(msg);
+secp.hashes.hmacSha256 = (key: Uint8Array, ...msgs: Uint8Array[]) => {
+  const h = hmac.create(sha256, key);
+  msgs.forEach((msg) => h.update(msg));
+  return h.digest();
+};
+
+secp.hashes.hmacSha256Async = async (
+  key: Uint8Array,
+  ...msgs: Uint8Array[]
+) => {
+  const h = hmac.create(sha256, key);
+  msgs.forEach((msg) => h.update(msg));
+  return h.digest();
+};
 export function hash256(data: Uint8Array): Uint8Array {
   return sha256(sha256(data));
 }

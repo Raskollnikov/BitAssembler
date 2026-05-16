@@ -1,59 +1,43 @@
 import { secp, hash256, hexToBytes, concat, bytesToHex } from "./primitives";
 import { buildOpReturnScript, type Output, type TxInput } from "./txBuilder";
 import { buildBIP143Sighash } from "./sighash";
-import { addressToScript } from "./address";
+import { addressToScript, base58Decode } from "./address";
 import { varInt, writeUInt32LE, writeUInt64LE } from "./primitives";
+import { hash160 } from "./primitives";
 
-function wifToPrivKey(wif: string): Uint8Array {
-  const BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-  let num = 0n;
-  for (const c of wif) {
-    const idx = BASE58.indexOf(c);
-    if (idx < 0) throw new Error("Invalid WIF char");
-    num = num * 58n + BigInt(idx);
-  }
-  const bytes: number[] = [];
-  while (num > 0n) {
-    bytes.unshift(Number(num & 0xffn));
-    num >>= 8n;
-  }
-  return Uint8Array.from(bytes.slice(1, 33));
-}
+function wifToPrivKey(input: string): Uint8Array {
+  const cleaned = input.trim();
 
-function derEncode(r: bigint, s: bigint): Uint8Array {
-  const N = secp.CURVE.n;
-
-  if (s > N / 2n) s = N - s;
-
-  function encodeScalar(v: bigint): Uint8Array {
-    const hex = v.toString(16).padStart(64, "0");
-    const bytes = Uint8Array.from(
-      hex.match(/.{2}/g)!.map((b) => parseInt(b, 16)),
-    );
-    let start = 0;
-    while (start < bytes.length - 1 && bytes[start] === 0) start++;
-    const trimmed = bytes.slice(start);
-    return trimmed[0] & 0x80 ? Uint8Array.from([0x00, ...trimmed]) : trimmed;
+  if (/^[0-9a-fA-F]{64}$/.test(cleaned)) {
+    return hexToBytes(cleaned);
   }
 
-  const rb = encodeScalar(r);
-  const sb = encodeScalar(s);
+  const decoded = base58Decode(cleaned);
+  if (decoded.length < 4) throw new Error("WIF too short");
 
-  const inner = Uint8Array.from([
-    0x02,
-    rb.length,
-    ...rb,
-    0x02,
-    sb.length,
-    ...sb,
-  ]);
+  const payload = decoded.slice(0, -4);
+  const checksum = decoded.slice(-4);
+  const expected = hash256(payload).slice(0, 4);
 
-  return Uint8Array.from([0x30, inner.length, ...inner, 0x01]);
-}
+  for (let i = 0; i < 4; i++) {
+    if (checksum[i] !== expected[i]) {
+      throw new Error("Invalid WIF checksum");
+    }
+  }
 
-function serializeOutput(out: Output): Uint8Array {
-  const script = out.scriptPubKey ?? addressToScript(out.address!).scriptPubKey;
-  return concat(writeUInt64LE(out.amountSats), varInt(script.length), script);
+  if (payload[0] !== 0x80) throw new Error("Invalid WIF version (not mainnet)");
+
+  const isCompressed = payload.length === 34 && payload[33] === 0x01;
+  if (!isCompressed && payload.length !== 33) {
+    throw new Error("Invalid WIF payload length");
+  }
+
+  const privateKeyBytes = payload.slice(1, 33);
+  if (privateKeyBytes.length !== 32) {
+    throw new Error("Invalid private key length in WIF");
+  }
+
+  return Uint8Array.from(privateKeyBytes);
 }
 
 export interface SignedTxResult {
@@ -80,8 +64,8 @@ export async function signAndBuildTx(
 
   const sighash = buildBIP143Sighash(input, outputs, opReturnMessage);
 
-  const sig = await secp.sign(sighash, privKey, { lowS: true });
-  const derSig = derEncode(sig.r, sig.s);
+  const sigBytes = await secp.sign(sighash, privKey, { lowS: true, der: true });
+  const derSig = Uint8Array.from([...sigBytes, 0x01]);
 
   const witness = concat(
     Uint8Array.from([0x02]),
@@ -98,7 +82,18 @@ export async function signAndBuildTx(
     varInt(0),
     writeUInt32LE(0xffffffff),
   );
-  const outputBytes = concat(...allOutputs.map(serializeOutput));
+
+  const outputBytes = concat(
+    ...allOutputs.map((out) => {
+      const script =
+        out.scriptPubKey ?? addressToScript(out.address!).scriptPubKey;
+      return concat(
+        writeUInt64LE(out.amountSats),
+        varInt(script.length),
+        script,
+      );
+    }),
+  );
 
   const raw = concat(
     writeUInt32LE(2),
@@ -113,13 +108,35 @@ export async function signAndBuildTx(
 
   const nonWitness = concat(
     writeUInt32LE(2),
+    Uint8Array.from([0x00, 0x01]),
     varInt(1),
     inputBytes,
     varInt(allOutputs.length),
     outputBytes,
     writeUInt32LE(0),
   );
+
   const txid = bytesToHex(hash256(nonWitness).reverse());
 
   return { hex: bytesToHex(raw), txid };
+}
+
+export async function wifToAddress(wif: string): Promise<string> {
+  const privKey = wifToPrivKey(wif);
+  const pubKey = secp.getPublicKey(privKey, true);
+
+  const { hash160, bytesToHex } = await import("./primitives");
+  const pkh = hash160(pubKey);
+
+  return bytesToHex(pkh);
+}
+
+export function getAddressFromWif(wif: string): {
+  pubKey: Uint8Array;
+  pubKeyHash: Uint8Array;
+} {
+  const privKey = wifToPrivKey(wif);
+  const pubKey = secp.getPublicKey(privKey, true);
+
+  return { pubKey, pubKeyHash: hash160(pubKey) };
 }
