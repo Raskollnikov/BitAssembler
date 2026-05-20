@@ -11,6 +11,8 @@ import OpReturnField from "./components/OpReturnField";
 import HexVisualizer from "./components/HexVisualizer";
 import BroadcastPanel from "./components/BroadcastPanel";
 
+import { useFees } from "./hooks/useFees";
+
 export interface Output {
   address: string;
   amountSats: bigint;
@@ -45,6 +47,10 @@ export default function App() {
   const [signing, setSigning] = useState(false);
 
   const totalOut = outputs.reduce((s, o) => s + o.amountSats, 0n);
+
+  const { fees } = useFees();
+
+  const DUST_LIMIT = 546n;
 
   const estimatedVbytes = useMemo(() => {
     const overhead = 10n;
@@ -126,11 +132,18 @@ export default function App() {
       return;
     }
 
-    const allOutputs = autoChange
-      ? [...validOutputs, { address: utxo.address, amountSats: change }].filter(
-          (o) => o.amountSats > 0n,
-        )
-      : validOutputs;
+    const changeOutput =
+      autoChange && change >= DUST_LIMIT
+        ? [{ address: utxo.address, amountSats: change }]
+        : [];
+
+    if (autoChange && change > 0n && change < DUST_LIMIT) {
+      console.info(`${change} sats change is dust — absorbed into fee`);
+    }
+
+    const allOutputs = [...validOutputs, ...changeOutput].filter(
+      (o) => o.amountSats > 0n,
+    );
 
     if (allOutputs.length === 0) {
       alert("add at least one output");
@@ -188,7 +201,12 @@ export default function App() {
             utxo={utxo}
           />
           <OpReturnField value={opReturn} onChange={setOpReturn} />
-          <FeeSelector feeRate={feeRate} onChange={setFeeRate} fee={fee} />
+          <FeeSelector
+            feeRate={feeRate}
+            onChange={setFeeRate}
+            fee={fee}
+            fees={fees}
+          />
 
           <div className="bg-zinc-900/70 border border-zinc-800 rounded-3xl p-8">
             <h3 className="text-xl font-semibold mb-6">Transaction Summary</h3>
@@ -211,8 +229,16 @@ export default function App() {
                 },
                 {
                   label: "CHANGE",
-                  value: change.toString(),
-                  color: change < 0n ? "text-red-500" : "text-zinc-300",
+                  value:
+                    autoChange && change > 0n && change < 546n
+                      ? "dust → fee"
+                      : change.toString(),
+                  color:
+                    change < 0n
+                      ? "text-red-500"
+                      : autoChange && change > 0n && change < 546n
+                        ? "text-amber-400"
+                        : "text-zinc-300",
                 },
               ].map((item) => (
                 <div

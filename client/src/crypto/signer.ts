@@ -7,10 +7,7 @@ import { hash160 } from "./primitives";
 
 function wifToPrivKey(input: string): Uint8Array {
   const cleaned = input.trim();
-
-  if (/^[0-9a-fA-F]{64}$/.test(cleaned)) {
-    return hexToBytes(cleaned);
-  }
+  if (/^[0-9a-fA-F]{64}$/.test(cleaned)) return hexToBytes(cleaned);
 
   const decoded = base58Decode(cleaned);
   if (decoded.length < 4) throw new Error("WIF too short");
@@ -18,25 +15,18 @@ function wifToPrivKey(input: string): Uint8Array {
   const payload = decoded.slice(0, -4);
   const checksum = decoded.slice(-4);
   const expected = hash256(payload).slice(0, 4);
-
   for (let i = 0; i < 4; i++) {
-    if (checksum[i] !== expected[i]) {
-      throw new Error("Invalid WIF checksum");
-    }
+    if (checksum[i] !== expected[i]) throw new Error("Invalid WIF checksum");
   }
-
   if (payload[0] !== 0x80) throw new Error("Invalid WIF version (not mainnet)");
 
   const isCompressed = payload.length === 34 && payload[33] === 0x01;
-  if (!isCompressed && payload.length !== 33) {
+  if (!isCompressed && payload.length !== 33)
     throw new Error("Invalid WIF payload length");
-  }
 
   const privateKeyBytes = payload.slice(1, 33);
-  if (privateKeyBytes.length !== 32) {
+  if (privateKeyBytes.length !== 32)
     throw new Error("Invalid private key length in WIF");
-  }
-
   return Uint8Array.from(privateKeyBytes);
 }
 
@@ -62,7 +52,7 @@ export async function signAndBuildTx(
     });
   }
 
-  const sighash = buildBIP143Sighash(input, outputs, opReturnMessage);
+  const sighash = buildBIP143Sighash(input, allOutputs);
 
   const sigBytes = await secp.sign(sighash, privKey, { lowS: true, der: true });
   const derSig = Uint8Array.from([...sigBytes, 0x01]);
@@ -108,7 +98,6 @@ export async function signAndBuildTx(
 
   const nonWitness = concat(
     writeUInt32LE(2),
-    Uint8Array.from([0x00, 0x01]),
     varInt(1),
     inputBytes,
     varInt(allOutputs.length),
@@ -117,18 +106,7 @@ export async function signAndBuildTx(
   );
 
   const txid = bytesToHex(hash256(nonWitness).reverse());
-
   return { hex: bytesToHex(raw), txid };
-}
-
-export async function wifToAddress(wif: string): Promise<string> {
-  const privKey = wifToPrivKey(wif);
-  const pubKey = secp.getPublicKey(privKey, true);
-
-  const { hash160, bytesToHex } = await import("./primitives");
-  const pkh = hash160(pubKey);
-
-  return bytesToHex(pkh);
 }
 
 export function getAddressFromWif(wif: string): {
@@ -137,6 +115,5 @@ export function getAddressFromWif(wif: string): {
 } {
   const privKey = wifToPrivKey(wif);
   const pubKey = secp.getPublicKey(privKey, true);
-
   return { pubKey, pubKeyHash: hash160(pubKey) };
 }

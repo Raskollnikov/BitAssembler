@@ -29,4 +29,14 @@ app.post("/api/broadcast", async (req, res) => {
   }
 });
 
+app.get("/api/fees", async (req, res) => {
+  try {
+    const r = await fetch("https://mempool.space/api/v1/fees/recommended");
+    const data = await r.json();
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.listen(3001, () => console.log("proxy running on :3001"));
