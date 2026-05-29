@@ -10,13 +10,10 @@ import FeeSelector from "./components/FeeSelector";
 import OpReturnField from "./components/OpReturnField";
 import HexVisualizer from "./components/HexVisualizer";
 import BroadcastPanel from "./components/BroadcastPanel";
+import CsvImport from "./components/CsvImport";
+import type { Output } from "./crypto/txBuilder";
 
 import { useFees } from "./hooks/useFees";
-
-export interface Output {
-  address: string;
-  amountSats: bigint;
-}
 
 function validateOutputs(outputs: Output[]): string | null {
   for (const out of outputs) {
@@ -45,6 +42,7 @@ export default function App() {
   const [signedHex, setSignedHex] = useState<string | null>(null);
   const [txid, setTxid] = useState<string | null>(null);
   const [signing, setSigning] = useState(false);
+  const [csvMode, setCsvMode] = useState(false);
 
   const totalOut = outputs.reduce((s, o) => s + o.amountSats, 0n);
 
@@ -192,14 +190,27 @@ export default function App() {
             error={error}
             utxo={utxo}
           />
-          <OutputsBuilder
-            outputs={outputs}
-            onChange={setOutputs}
-            change={change}
-            totalOut={totalOut}
-            fee={fee}
-            utxo={utxo}
+          <CsvImport
+            active={csvMode}
+            onImport={(csvOutputs) => {
+              setCsvMode(true);
+              setOutputs(csvOutputs);
+            }}
+            onClear={() => {
+              setCsvMode(false);
+              setOutputs([{ address: "", amountSats: 0n }]);
+            }}
           />
+          {!csvMode && (
+            <OutputsBuilder
+              outputs={outputs}
+              onChange={setOutputs}
+              change={change}
+              totalOut={totalOut}
+              fee={fee}
+              utxo={utxo}
+            />
+          )}
           <OpReturnField value={opReturn} onChange={setOpReturn} />
           <FeeSelector
             feeRate={feeRate}
@@ -254,6 +265,18 @@ export default function App() {
                 </div>
               ))}
             </div>
+
+            {change < 0n && (
+              <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 mt-4">
+                <p className="text-red-400 font-semibold">Insufficient funds</p>
+                <p className="text-sm text-red-300">
+                  Need {(totalOut + fee - utxo!.amountSats).toLocaleString()}{" "}
+                  more sats
+                  <br />
+                  Reduce sending amount or increase input.
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-8">

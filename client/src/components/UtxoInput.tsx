@@ -70,10 +70,10 @@ export default function UtxoInput({ onFetch, loading, error, utxo }: Props) {
         <p className="mt-3 text-xs font-mono text-red-400">✗ {error}</p>
       )}
 
-      {utxo && (
+      {utxo && utxo.address && (
         <div className="mt-4 flex items-center gap-3 bg-zinc-950 rounded-xl px-4 py-3">
           <span
-            className={`text-xs font-mono px-2 py-0.5 rounded-md ${TYPE_COLORS[utxo.type]}`}
+            className={`text-xs font-mono px-2 py-0.5 rounded-md ${TYPE_COLORS[utxo.type] ?? ""}`}
           >
             {utxo.type}
           </span>
